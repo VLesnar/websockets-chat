@@ -1,0 +1,30 @@
+{
+  "name": "websockets-chat",
+  "version": "1.0.0",
+  "description": "Small websockets chat app",
+  "main": "app.js",
+  "scripts": {
+    "start": "node ./src/app.js",
+    "pretest": "eslint ./src --fix",
+    "test": "echo \"Tests complete\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VLesnar/websockets-chat.git"
+  },
+  "author": "Veronica Lesnar",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/VLesnar/websockets-chat/issues"
+  },
+  "homepage": "https://github.com/VLesnar/websockets-chat#readme",
+  "devDependencies": {
+    "eslint": "^3.17.1",
+    "eslint-config-airbnb": "^14.1.0",
+    "eslint-plugin-import": "^2.2.0"
+  },
+  "dependencies": {
+    "socket.io": "^1.7.3",
+    "xxhashjs": "^0.2.1"
+  }
+}
