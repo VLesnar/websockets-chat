@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Websockets Chat App</title>
+  <meta charset="utf-8"/>
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;  
+      padding: 0;
+    }
+    
+    canvas {
+      position: relative;
+      margin: 10px;
+      border: 1px solid black;
+    }
+    
+    #chatbox {
+      position: absolute;
+      margin: 5px;
+      left: 10px;
+      bottom: 145px;
+      opacity: 0.6;
+    }
+    
+    #messageArea {
+      resize: none;
+      border: 2px solid black;
+    }
+    
+    #chatText {
+      position: absolute;
+      border: 2px solid black;
+      width: 378px;
+      opacity: 1.0;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    #nameChange {
+      position: relative;
+      margin: 10px;
+    }
+  </style>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://npmcdn.com/babel-core@5.8.38/browser.min.js"></script>
+  <script type="text/babel" >
+    "use strict";
+
+    let canvas;
+    let ctx;
+    let socket;
+    let groundImage;  // Holds the background image in the canvas
+    let pattern;  // Holds the pattern for the background image
+    let chatbox;  // The form for chatting
+    let messageArea;  // The area that displays messages
+    let nameChange; // The form for changing a username
+    let players = {}; // Holds player data
+
+    // Set a new user
+    const setUser = (data) => {
+      messageArea.value = `You have joined the room\nYour name is ${data.name}`;
+    };
+
+    // Remove a user
+    const removeUser = (data) => {
+      messageArea.value += `\n${data.name} has left the room`;
+    };
+
+    // Redraw things to the canvas
+    const redraw = (time) => {
+      ctx.clearRect(0, 0, 600, 600);
+      
+      // Draw the background
+      ctx.fillStyle = pattern;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      requestAnimationFrame(redraw);
+    };
+    
+    // Send the message from the form
+    const sendChat = (e) => {
+      let text = document.querySelector("#chatText").value;
+      socket.emit('textUpdate', text);
+      document.querySelector("#chatText").value = "";
+      e.preventDefault();
+      return false;
+    };
+
+    // Send the username from the form
+    const sendName = (e) => {
+      let name = document.querySelector('#username').value;
+
+      const keys = Object.keys(players);
+      
+      for(let i = 0; i < keys.length; i++) {
+        if(players[keys[i]].name === name) {
+          document.querySelector("#username").value = "";
+          messageArea.value += `\n${name} has already been taken`;
+          e.preventDefault();
+          return false;
+        }
+      }
+      socket.emit('nameUpdate', name);
+      document.querySelector("#username").value = "";
+      e.preventDefault();
+      return false;
+    };
+
+    // Update the text onscreen
+    const updateText = (data) => {
+      messageArea.value += `\n${data}`;
+      messageArea.scrollTop = messageArea.scrollHeight;
+    };
+
+    const updateName = (data) => {
+      if(!players[data.hash]) {
+        players[data.hash] = data;
+        return;
+      }
+      
+      if(players[data.hash].lastUpdate >= data.lastUpdate) {
+        return;
+      }
+      
+      const player = players[data.hash];
+      player.lastUpdate = data.lastUpdate;
+      player.name = data.name;
+      players[data.hash] = player;
+    };
+
+    const init = () => {
+      groundImage = document.querySelector('#background');
+      chatbox = document.querySelector('#chatbox');
+      messageArea = document.querySelector('#messageArea');
+      nameChange = document.querySelector('#nameChange');
+      
+      canvas = document.querySelector('#canvas');
+      ctx = canvas.getContext('2d');
+      
+      socket = io.connect();
+      
+      // Create the pattern for the background
+      pattern = ctx.createPattern(groundImage, 'repeat');
+      
+      socket.on('joined', setUser);
+      
+      socket.on('updatedText', updateText);
+      
+      socket.on('updatedName', updateName);
+      
+      socket.on('disconnect', removeUser);
+      
+      chatbox.addEventListener('submit', sendChat);
+      nameChange.addEventListener('submit', sendName);
+      
+      requestAnimationFrame(redraw);
+    };
+
+    window.onload = init;
+  </script>
+</head>
+<body>
+  <canvas id="canvas" height="600" width="600"></canvas>
+  <form id="chatbox">
+    <textarea id="messageArea" maxlength="100" rows="10" cols="50" wrap="hard" readonly></textarea>
+    <input autocomplete="off" maxlength="50" id="chatText" type="text" />
+    <input class="hidden" type="submit" />
+  </form>
+  <img id="background" class="hidden" src="ground.png" alt="ground.png" />
+  <form id="nameChange">
+    <input autocomplete="off" maxLength="20" id="username" type="text" placeholder="Enter new name here" />
+    <input type="submit" />
+  </form>
+</body>
+</html>
