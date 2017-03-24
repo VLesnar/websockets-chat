@@ -47,6 +47,7 @@
     #nameChange {
       position: relative;
       margin: 10px;
+      top: -185px;
     }
   </style>
   <script src="/socket.io/socket.io.js"></script>
@@ -63,9 +64,12 @@
     let messageArea;  // The area that displays messages
     let nameChange; // The form for changing a username
     let players = {}; // Holds player data
+    let hash;
 
     // Set a new user
     const setUser = (data) => {
+      hash = data.hash;
+      players[hash] = data;
       messageArea.value = `You have joined the room\nYour name is ${data.name}`;
       messageArea.scrollTop = messageArea.scrollHeight;
     };
@@ -124,7 +128,49 @@
           }
           return;
         }
-      }, 3000);
+      }, 5000);
+    };
+
+    const chooseHand = (data) => {
+      let count = 0;
+      let timer = setInterval(function() {
+        if(count === 0) {
+          messageArea.value += `\nChoose: 1 = Rock, 2 = Scissors, 3 = Paper`;
+          messageArea.scrollTop = messageArea.scrollHeight;
+        }
+        
+        const player = players[hash];
+        
+        const keyDownHandler = (e) => {
+          let keyPressed = e.which;
+          
+          if(keyPressed === 49 || keyPressed === 97) {
+            player.choice = 1;
+          } else if(keyPressed === 50 || keyPressed === 98) {
+            player.choice = 2;       
+          } else if(keyPressed === 51 || keyPressed === 98) {
+            player.choice = 3;
+          }
+        };
+        
+        document.body.addEventListener('keydown', keyDownHandler);
+        
+        let newData = {
+          player: player,
+          opponent: data,
+        };
+        
+        if(count >= 1) {
+          console.log("here");
+          socket.emit('chosenHand', newData);
+          clearInterval(timer);
+          document.body.removeEventListener('keydown', keyDownHandler);
+          document.querySelector("#chatText").value = "";
+          return;
+        }
+        
+        count++;
+      }, 5000);
     };
 
     // Send the username from the form
@@ -189,6 +235,8 @@
       socket.on('updatedText', updateText);
       
       socket.on('initiatedDuel', initiateDuel);
+      
+      socket.on('chooseHand', chooseHand);
       
       socket.on('updatedName', updateName);
       
