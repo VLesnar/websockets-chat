@@ -18,11 +18,12 @@
     }
     
     #chatbox {
-      position: absolute;
+      position: relative;
       margin: 5px;
       left: 10px;
-      bottom: 145px;
+      bottom: 35%;
       opacity: 0.6;
+      width: 375px;
     }
     
     #messageArea {
@@ -32,8 +33,10 @@
     
     #chatText {
       position: absolute;
+      left: 0%;
+      top: 165px;
+      width: 375px;
       border: 2px solid black;
-      width: 378px;
       opacity: 1.0;
     }
     
@@ -64,11 +67,13 @@
     // Set a new user
     const setUser = (data) => {
       messageArea.value = `You have joined the room\nYour name is ${data.name}`;
+      messageArea.scrollTop = messageArea.scrollHeight;
     };
 
     // Remove a user
     const removeUser = (data) => {
       messageArea.value += `\n${data.name} has left the room`;
+      messageArea.scrollTop = messageArea.scrollHeight;
     };
 
     // Redraw things to the canvas
@@ -91,6 +96,37 @@
       return false;
     };
 
+    const initiateDuel = (data) => {
+      let count = 0;
+      let timer = setInterval(function() {
+        count++;
+        let text = document.querySelector("#chatText").value;
+        text.toLowerCase();
+        if(text === 'y') {
+          document.querySelector("#chatText").value = "";
+          socket.emit('acceptDuel', data);
+          if(count >= 1) {
+            document.querySelector("#chatText").value = "";
+            clearInterval(timer);
+          }
+          return;
+        } else {
+          socket.emit('rejectDuel', data);
+          if(count >= 1) {
+            if(text !== 'n') {
+              messageArea.value += `\nSorry, you didn't answer in time`; 
+              messageArea.scrollTop = messageArea.scrollHeight;
+            } else {
+              document.querySelector("#chatText").value = "";
+            }
+            
+            clearInterval(timer);
+          }
+          return;
+        }
+      }, 3000);
+    };
+
     // Send the username from the form
     const sendName = (e) => {
       let name = document.querySelector('#username').value;
@@ -101,6 +137,7 @@
         if(players[keys[i]].name === name) {
           document.querySelector("#username").value = "";
           messageArea.value += `\n${name} has already been taken`;
+          messageArea.scrollTop = messageArea.scrollHeight;
           e.preventDefault();
           return false;
         }
@@ -150,6 +187,8 @@
       socket.on('joined', setUser);
       
       socket.on('updatedText', updateText);
+      
+      socket.on('initiatedDuel', initiateDuel);
       
       socket.on('updatedName', updateName);
       
