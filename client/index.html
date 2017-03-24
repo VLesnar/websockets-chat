@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Websockets Chat App</title>
+  <title>Rock, Paper, Scissors</title>
   <meta charset="utf-8"/>
   <style>
     html, body {
@@ -18,11 +18,12 @@
     }
     
     #chatbox {
-      position: absolute;
+      position: relative;
       margin: 5px;
       left: 10px;
-      bottom: 145px;
+      bottom: 35%;
       opacity: 0.6;
+      width: 375px;
     }
     
     #messageArea {
@@ -32,8 +33,10 @@
     
     #chatText {
       position: absolute;
+      left: 0%;
+      top: 165px;
+      width: 375px;
       border: 2px solid black;
-      width: 378px;
       opacity: 1.0;
     }
     
@@ -44,6 +47,7 @@
     #nameChange {
       position: relative;
       margin: 10px;
+      top: -185px;
     }
   </style>
   <script src="/socket.io/socket.io.js"></script>
@@ -54,30 +58,122 @@
     let canvas;
     let ctx;
     let socket;
+    let avatar;
     let groundImage;  // Holds the background image in the canvas
     let pattern;  // Holds the pattern for the background image
     let chatbox;  // The form for chatting
     let messageArea;  // The area that displays messages
     let nameChange; // The form for changing a username
     let players = {}; // Holds player data
+    let hash; // Holds the client hash
+    let self; // Holds the client player data
+
+    // Updates client player data to reflect changes from the server
+    const update = (data) => {
+      if(!players[data.hash]) {
+        players[data.hash] = data;
+        return;
+      }
+      
+      if(players[data.hash].lastUpdate >= data.lastUpdate) {
+        return;
+      }
+      
+      const player = players[data.hash];
+      player.lastUpdate = data.lastUpdate;
+      player.prevX = data.prevX;
+      player.prevY = data.prevY;
+      player.destX = data.destX;
+      player.destY = data.destY;
+      player.alpha = 0;
+      player.moveLeft = data.moveLeft;
+      player.moveRight = data.moveRight;
+      player.moveUp = data.moveUp;
+      player.moveDown = data.moveDown;
+      self = player;  // Added for easy access to client player data
+    };
+
+    const lerp = (v0, v1, alpha) => {
+      return (1 - alpha) * v0 + alpha * v1;
+    };
+
+    const updatePosition = () => {
+      const player = players[hash];
+      
+      player.prevX = player.x;
+      player.prevY = player.y;
+      
+      if(player.moveLeft && player.destX > 0) {
+        player.destX -= 3;
+      }
+      if(player.moveRight && player.destX < 500) {
+        player.destX += 3;
+      }
+      if(player.moveUp && player.destY > 0) {
+        player.destY -= 3;
+      }
+      if(player.moveDown && player.destY < 500) {
+        player.destY += 3;
+      }
+      
+      player.alpha = 0;
+      socket.emit('movementUpdate', player);
+    };
 
     // Set a new user
     const setUser = (data) => {
+      hash = data.hash;
+      players[hash] = data;
+      self = data;
       messageArea.value = `You have joined the room\nYour name is ${data.name}`;
+      messageArea.scrollTop = messageArea.scrollHeight;
+      requestAnimationFrame(redraw);
     };
 
     // Remove a user
     const removeUser = (data) => {
       messageArea.value += `\n${data.name} has left the room`;
+      messageArea.scrollTop = messageArea.scrollHeight;
     };
 
     // Redraw things to the canvas
     const redraw = (time) => {
+      updatePosition();
       ctx.clearRect(0, 0, 600, 600);
       
       // Draw the background
       ctx.fillStyle = pattern;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draws each of the players to the screen
+      const keys = Object.keys(players);
+      
+      for(let i = 0; i < keys.length; i++) {
+        const player = players[keys[i]];
+        
+        if(player.alpha < 1) {
+          player.alpha += 0.05;
+        }
+        
+        player.x = lerp(player.prevX, player.destX, player.alpha);
+        player.y = lerp(player.prevY, player.destY, player.alpha);
+        player.cx = player.x + 50;
+        player.cy = player.y + 50; 
+        
+        // If two players collide, display their usernames
+        if(player.hash !== self.hash) {
+          if(Math.abs(self.cx - player.cx) < self.r && Math.abs(self.cy - player.cy) < self.r) {  
+            ctx.font = "24px Arial";
+            console.dir(player);
+            console.dir(self);
+            ctx.fillStyle = "black";
+            ctx.fillText(player.name, player.x, player.y - 10);
+            ctx.fillText(self.name, self.x, self.y - 10);
+          }
+        }
+        
+        ctx.drawImage(avatar, player.x, player.y);        
+      }
       
       requestAnimationFrame(redraw);
     };
@@ -91,16 +187,105 @@
       return false;
     };
 
+    // Sets a 5 second timer for players to decide if they want to play Rock, Paper, Scissors
+    const initiateDuel = (data) => {
+      let count = 0;  // Used to cancel out setInterval
+      
+      // Timer function
+      let timer = setInterval(function() {
+        count++;
+        let text = document.querySelector("#chatText").value;
+        text.toLowerCase();
+        
+        // If the player would like to duel, enter "y" - DO NOT press "enter"
+        if(text === 'y') {
+          document.querySelector("#chatText").value = "";
+          socket.emit('acceptDuel', data);
+          if(count >= 1) {
+            document.querySelector("#chatText").value = "";
+            clearInterval(timer);
+          }
+          return;
+        } else {  // If any other data or nothing in inputted
+          socket.emit('rejectDuel', data);
+          if(count >= 1) {
+            if(text !== 'n') {  // If the player fails to answer to the challenge
+              messageArea.value += `\nSorry, you didn't answer in time`; 
+              messageArea.scrollTop = messageArea.scrollHeight;
+            } else {
+              document.querySelector("#chatText").value = "";
+            }
+            
+            // Clears the timer so it doesn't keep running
+            clearInterval(timer);
+          }
+          return;
+        }
+      }, 5000);
+    };
+
+    // Decides which hand the player would like to throw
+    // 1 = Rock, 2 = Paper, 3 = Scissors
+    const chooseHand = (data) => {
+      let count = 0;  // Used to cancel out setInterval
+      
+      // Timer function, gives player 5 seconds to decide
+      let timer = setInterval(function() {
+        if(count === 0) {
+          messageArea.value += `\nChoose: 1 = Rock, 2 = Scissors, 3 = Paper`;
+          messageArea.scrollTop = messageArea.scrollHeight;
+        }
+        
+        const player = players[hash];
+        
+        const keyDownHandler = (e) => {
+          let keyPressed = e.which;
+          
+          if(keyPressed === 49 || keyPressed === 97) {  // 1 or numpad 1
+            player.choice = 1;
+          } else if(keyPressed === 50 || keyPressed === 98) { // 2 or numpad 2
+            player.choice = 2;       
+          } else if(keyPressed === 51 || keyPressed === 98) { // 3 or numpad 3
+            player.choice = 3;
+          }
+        };
+        
+        document.body.addEventListener('keydown', keyDownHandler);
+        
+        // Creates data so socket has access to self and opponent player
+        let newData = {
+          player: player,
+          opponent: data,
+        };
+        
+        // Cancels the setInterval
+        if(count >= 1) {
+          console.log("here");
+          socket.emit('chosenHand', newData);
+          clearInterval(timer);
+          // Remove the event listener
+          document.body.removeEventListener('keydown', keyDownHandler);
+          document.querySelector("#chatText").value = ""; // Resets the chat box
+          return;
+        }
+        
+        count++;
+      }, 5000);
+    };
+
     // Send the username from the form
     const sendName = (e) => {
       let name = document.querySelector('#username').value;
 
       const keys = Object.keys(players);
       
+      // Checks to see if the name has already been taken - NOTE: Bug when player first enters and
+      // doesn't have access to every player yet
       for(let i = 0; i < keys.length; i++) {
         if(players[keys[i]].name === name) {
           document.querySelector("#username").value = "";
           messageArea.value += `\n${name} has already been taken`;
+          messageArea.scrollTop = messageArea.scrollHeight;
           e.preventDefault();
           return false;
         }
@@ -117,6 +302,7 @@
       messageArea.scrollTop = messageArea.scrollHeight;
     };
 
+    // Update the username
     const updateName = (data) => {
       if(!players[data.hash]) {
         players[data.hash] = data;
@@ -133,7 +319,48 @@
       players[data.hash] = player;
     };
 
+    const keyDownHandler = (e) => {
+      let keyPressed = e.which;
+      const player = players[hash];
+
+      if(keyPressed === 87 || keyPressed === 38) {
+          player.moveUp = true;
+      }
+      else if(keyPressed === 65 || keyPressed === 37) {
+          player.moveLeft = true;
+      }
+      else if(keyPressed === 83 || keyPressed === 40) {
+          player.moveDown = true;
+      }
+      else if(keyPressed === 68 || keyPressed === 39) {
+          player.moveRight = true;
+      }
+      
+      if(player.moveUp || player.moveDown || player.moveLeft || player.moveRight) {
+        e.preventDefault();
+      }
+    };
+
+    const keyUpHandler = (e) => {
+      let keyPressed = e.which;
+      const player = players[hash];
+      
+      if(keyPressed === 87 || keyPressed === 38) {
+        player.moveUp = false;
+      }
+      else if(keyPressed === 65 || keyPressed === 37) {
+        player.moveLeft = false;
+      }
+      else if(keyPressed === 83 || keyPressed === 40) {
+        player.moveDown = false;
+      }
+      else if(keyPressed === 68 || keyPressed === 39) {
+        player.moveRight = false;
+      }
+    };
+
     const init = () => {
+      avatar = document.querySelector('#avatar');
       groundImage = document.querySelector('#background');
       chatbox = document.querySelector('#chatbox');
       messageArea = document.querySelector('#messageArea');
@@ -151,12 +378,21 @@
       
       socket.on('updatedText', updateText);
       
+      socket.on('updatedMovement', update);
+      
+      socket.on('initiatedDuel', initiateDuel);
+      
+      socket.on('chooseHand', chooseHand);
+      
       socket.on('updatedName', updateName);
       
       socket.on('disconnect', removeUser);
       
       chatbox.addEventListener('submit', sendChat);
       nameChange.addEventListener('submit', sendName);
+      
+      document.body.addEventListener('keydown', keyDownHandler);
+      document.body.addEventListener('keyup', keyUpHandler);
       
       requestAnimationFrame(redraw);
     };
@@ -172,9 +408,14 @@
     <input class="hidden" type="submit" />
   </form>
   <img id="background" class="hidden" src="ground.png" alt="ground.png" />
+  <img id="avatar" class="hidden" src="coin.jpg" alt="coin jpg" />
   <form id="nameChange">
     <input autocomplete="off" maxLength="20" id="username" type="text" placeholder="Enter new name here" />
     <input type="submit" />
   </form>
+  <p>Play Rock, Paper, Scissors!</p>
+  <p>Play with your friends and talk to them! Type "/engage <i>playername</i>" to ask for a game! 
+  Press 1 for Rock, 2 for Paper, and 3 for Scissors!</p>
+  <p>Don't know what players are in your room? Move over them to display their username!</p>
 </body>
 </html>
